@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{system_instruction, program::invoke};
 
 declare_id!("6F9BXG9UXFix5yJ2sZfsbXAg7KcrT3oW2YxjorWik1Bo");
 
@@ -54,6 +55,63 @@ pub mod cricketfi_contracts {
 
         Ok(())
     }
+
+    pub fn resolve_match(
+        ctx: Context<ResolveMatch>, 
+        // match_id: String, 
+        winner: String
+        )->Result<()>{
+        let match_account = &mut ctx.accounts.match_account;
+        let platform = &mut ctx.accounts.platform;
+
+        require_keys_eq!(platform.authority, ctx.accounts.authority.key(), CricketFiError::UnauthorizedAccess);
+        require!(match_account.status == MatchStatus::Active, CricketFiError::InvalidMatchStatus);
+
+        match_account.status = MatchStatus::Completed;
+        match_account.winner = Some(winner);
+        Ok(())
+    }
+
+    pub fn claim_winnings(ctx: Context<ClaimWinnings>, 
+        // match_id: String, 
+        team: u8)->
+        Result<()>
+        {
+        let bet = &mut ctx.accounts.bet_account;
+        let match_account = &mut ctx.accounts.match_account;
+        let platform = &mut ctx.accounts.platform;
+
+        require!(bet.claimed == false, CricketFiError::WinningsAlreadyClaimed);
+        require!(match_account.status == MatchStatus::Completed, CricketFiError::InvalidMatchStatus);
+
+        let winning_team = if team==0{
+            match_account.team1_pool_amount
+        } else{
+            match_account.team2_pool_amount
+        };
+
+        let winnings = match_account.total_pool_amount * match_account.odds_team1 / winning_team;
+        let platform_fee = winnings * platform.fee_percentage / 100;
+        let winnings_to_claim = winnings - platform_fee;
+        //update bet account
+        bet.claimed= true;
+        //updating match account
+        match_account.total_pool_amount -= winnings;
+        //updating platform accounts
+        platform.treasury_balance+= platform_fee;
+        //transfering claimed winnings to the better
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.platform.key(),
+                &ctx.accounts.better.key(),
+                winnings_to_claim,
+            ),
+            &[
+                ctx.accounts.platform.to_account_info(),
+                ctx.accounts.better.to_account_info(),
+            ],
+        )?;        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -99,6 +157,30 @@ pub struct PlaceBet<'info>{
         payer= better,
         space = 8 + 32 + 32 + 8 + 1 + 8 + 1 + 8
     )]
+    pub bet_account: Account<'info,Bet>,
+    pub system_program: Program<'info,System>,
+}
+
+#[derive(Accounts)]
+pub struct ResolveMatch<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    pub platform: Account<'info,CricketFiContract>,
+    #[account(mut)]
+    pub match_account: Account<'info,Match>,
+    pub system_program: Program<'info,System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimWinnings<'info>{
+    #[account(mut)]
+    pub better: Signer<'info>,
+    #[account(mut)]
+    pub platform: Account<'info,CricketFiContract>,
+    #[account(mut)]
+    pub match_account: Account<'info, Match>,
+    #[account(mut)]
     pub bet_account: Account<'info,Bet>,
     pub system_program: Program<'info,System>,
 }
