@@ -23,6 +23,12 @@ pub mod cricketfi_contracts {
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
 
+        // Add match ID validation
+        require!(
+            match_account.match_id == match_id,
+            CricketFiError::InvalidMatch
+        );
+
         // Match status check, min and max bet amount check, team check
         require!(
             match_account.status == MatchStatus::Active,
@@ -72,17 +78,20 @@ pub mod cricketfi_contracts {
         Ok(())
     }
 
-    pub fn claim_winnings(ctx: Context<ClaimWinnings>, 
-        // match_id: String, 
-        team: u8)->
-        Result<()>
-        {
+    pub fn claim_winnings(ctx: Context<ClaimWinnings>, team: u8) -> Result<()> {
         let bet = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
 
         require!(bet.claimed == false, CricketFiError::WinningsAlreadyClaimed);
         require!(match_account.status == MatchStatus::Completed, CricketFiError::InvalidMatchStatus);
+
+        // Verify the claimed team is the winner
+        require!(
+            match_account.winner.as_ref().unwrap() == 
+            if team == 0 { &match_account.team1 } else { &match_account.team2 },
+            CricketFiError::InvalidTeam
+        );
 
         let winning_team = if team==0{
             match_account.team1_pool_amount
@@ -111,6 +120,30 @@ pub mod cricketfi_contracts {
                 ctx.accounts.better.to_account_info(),
             ],
         )?;        Ok(())
+    }
+
+    pub fn refund_bet(ctx: Context<RefundBet>, match_id: String) -> Result<()> {
+        let bet = &mut ctx.accounts.bet_account;
+        let match_account = &mut ctx.accounts.match_account;
+        let platform = &mut ctx.accounts.platform;
+
+        require!(match_account.status == MatchStatus::Cancelled, CricketFiError::MatchNotCancelled);
+        require!(!bet.claimed, CricketFiError::WinningsAlreadyClaimed);
+        
+        bet.claimed = true; //refund claimed
+        
+        //refund
+        Ok(invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.platform.key(),
+                &ctx.accounts.better.key(),
+                bet.amount,
+            ),
+            &[
+                ctx.accounts.platform.to_account_info(),
+                ctx.accounts.better.to_account_info(),
+            ]
+        )?)
     }
 }
 
@@ -180,10 +213,32 @@ pub struct ClaimWinnings<'info>{
     pub platform: Account<'info,CricketFiContract>,
     #[account(mut)]
     pub match_account: Account<'info, Match>,
-    #[account(mut)]
-    pub bet_account: Account<'info,Bet>,
+    #[account(
+        mut,
+        has_one = better,
+        constraint = bet_account.match_id == match_account.match_id @CricketFiError::InvalidMatch
+    )]
+    pub bet_account: Account<'info, Bet>,
     pub system_program: Program<'info,System>,
 }
+
+#[derive(Accounts)]
+pub struct RefundBet<'info> {
+    #[account(mut)]
+    pub better: Signer<'info>,
+    #[account(mut)]
+    pub platform: Account<'info, CricketFiContract>,
+    #[account(
+        mut,
+        has_one = better,
+        constraint = match_account.status == MatchStatus::Cancelled @CricketFiError::MatchNotCancelled,
+    )]
+    pub bet_account: Account<'info, Bet>,
+    #[account(mut)]
+    pub match_account: Account<'info, Match>,
+    pub system_program: Program<'info, System>,
+}
+
 
 #[account]
 pub struct CricketFiContract {
@@ -224,6 +279,14 @@ pub struct Bet{
     pub odds_at_bet: u64, //odds at the time of placing the bet
 }
 
+#[account]
+pub struct UserStats{
+    pub total_bets: u64,
+    pub total_winnings: u64,
+    pub wins: u64,
+    pub losses: u64,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
 pub enum MatchStatus {
     Created,
@@ -248,4 +311,10 @@ pub enum CricketFiError{
 
     #[msg("Invalid Team")]
     InvalidTeam,
+
+    #[msg("Match not cancelled")]
+    MatchNotCancelled,
+
+    #[msg("Invalid Match")]
+    InvalidMatch,
 }
