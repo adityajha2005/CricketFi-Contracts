@@ -8,34 +8,47 @@ pub mod cricketfi_contracts {
 
     pub fn initialize(ctx: Context<InitializePlatform>) -> Result<()> {
         msg!("Greetings from: {:?}", ctx.program_id);
+        let platform = &mut ctx.accounts.platform;
+        platform.authority = ctx.accounts.authority.key();
+        platform.total_matches = 0;
+        platform.total_bets = 0;
+        platform.treasury_balance = 0;
+        platform.fee_percentage = 2; // Default 2% fee
         Ok(())
     }
-    pub fn placebet(ctx:Context<PlaceBet>,match_id:String,amount:u64,team:u8) -> Result<()>{
+
+    pub fn placebet(ctx: Context<PlaceBet>, match_id: String, amount: u64, team: u8) -> Result<()> {
         let bet_account = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
 
-        //match status check, min and max bet amount check, team check
-        require!(match_account.status == MatchStatus::Active,CricketFiError::InvalidMatchStatus)
-        require!(amount>=match_account.min_bet_amount && amount<= match_account.max_bet_amount, 
-        CricketFiError::InvalidBetAmount)
-        require!(team==0 || team==1,CricketFiError::InvalidTeam)
-        //populate bet amount
-        bet.better = better.key();
-        bet.match_id = match_id;
-        bet.amount = amount;
-        bet.team = team;
-        bet.bet_time = Clock::get()?.unix_timestamp;
-        bet.claimed = false;
-        bet.odds_at_bet = match_account.odds_team1;
+        // Match status check, min and max bet amount check, team check
+        require!(
+            match_account.status == MatchStatus::Active,
+            CricketFiError::InvalidMatchStatus
+        );
+        require!(
+            amount >= match_account.min_bet_amount && amount <= match_account.max_bet_amount,
+            CricketFiError::InvalidBetAmount
+        );
+        require!(team == 0 || team == 1, CricketFiError::InvalidTeam);
+
+        // Populate bet account
+        bet_account.better = ctx.accounts.better.key();
+        bet_account.match_id = match_id;
+        bet_account.amount = amount;
+        bet_account.team = team;
+        bet_account.bet_time = Clock::get()?.unix_timestamp;
+        bet_account.claimed = false;
+        bet_account.odds_at_bet = match_account.odds_team1;
         
-        //updating match pool
-        if team==0{
+        // Updating match pool
+        if team == 0 {
             match_account.team1_pool_amount += amount;
-        }
-        else{
+        } else {
             match_account.team2_pool_amount += amount;
         }
+        match_account.total_pool_amount += amount;
         platform.total_bets += 1;
         platform.treasury_balance += amount * platform.fee_percentage / 100;
 
@@ -44,7 +57,7 @@ pub mod cricketfi_contracts {
 }
 
 #[derive(Accounts)]
-pub fn initialize(ctx: Context<InitializePlatform>) -> Result<()> {
+pub struct InitializePlatform<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     #[account(
