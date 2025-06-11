@@ -1,0 +1,10 @@
+aditya@Adityas-MacBook-Air cricketfi-contracts %    anchor deploy --provider.cluster devnet           
+Deploying cluster: https://api.devnet.solana.com
+Upgrade authority: /Users/aditya/.config/solana/id.json
+Deploying program "cricketfi_contracts"...
+Program path: /Users/aditya/Desktop/cricketfi-contracts/target/deploy/cricketfi_contracts.so...
+Program Id: 6F9BXG9UXFix5yJ2sZfsbXAg7KcrT3oW2YxjorWik1Bo
+
+Signature: 5pTeJobqr1s2Lrs6UxsTCVmXsqnNgpz1tiric8kWmPQBYNgxuXYEFf9fDPnR24B2W4h5WkURjuR3awqkk2zQiYGB
+
+Deploy success
