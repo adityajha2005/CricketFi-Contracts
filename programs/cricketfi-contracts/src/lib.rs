@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{system_instruction, program::invoke};
+use anchor_lang::solana_program::{
+    program::{invoke, invoke_signed},
+    system_instruction,
+};
 
 declare_id!("6F9BXG9UXFix5yJ2sZfsbXAg7KcrT3oW2YxjorWik1Bo");
 
@@ -22,6 +25,8 @@ pub mod cricketfi_contracts {
         let bet_account = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
+        let match_vault = &ctx.accounts.match_vault;
+        let user_bet_tracker = &mut ctx.accounts.user_bet_tracker;
 
         // Add match ID validation
         require!(
@@ -34,31 +39,116 @@ pub mod cricketfi_contracts {
             match_account.status == MatchStatus::Active,
             CricketFiError::InvalidMatchStatus
         );
+
+        // Check if match has already started
+        let current_time = Clock::get()?.unix_timestamp;
+        let start_time = match_account.start_time.parse::<i64>()
+            .map_err(|_| CricketFiError::InvalidStartTime)?;
+        require!(
+            current_time < start_time,
+            CricketFiError::BettingClosed
+        );
+
+        // Check if user has already bet on this match
+        require!(
+            !user_bet_tracker.has_bet,
+            CricketFiError::UserAlreadyBet
+        );
+
         require!(
             amount >= match_account.min_bet_amount && amount <= match_account.max_bet_amount,
             CricketFiError::InvalidBetAmount
         );
         require!(team == 0 || team == 1, CricketFiError::InvalidTeam);
 
+        // Validate odds are reasonable (between 1.01x and 10.00x, i.e., 101 to 1000 basis points)
+        let odds_to_use = if team == 0 { 
+            match_account.odds_team1 
+        } else { 
+            match_account.odds_team2 
+        };
+        require!(
+            odds_to_use >= 101 && odds_to_use <= 1000,
+            CricketFiError::InvalidOdds
+        );
+
+        // Mark that this user has bet on this match
+        user_bet_tracker.user = ctx.accounts.better.key();
+        user_bet_tracker.match_id = match_id.clone();
+        user_bet_tracker.has_bet = true;
+
+        //Calculate fee & principal
+        let fee = amount
+            .checked_mul(platform.fee_percentage)
+            .ok_or(ErrorCode::NumericalOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::NumericalOverflow)?;
+        let principal = amount.checked_sub(fee).ok_or(ErrorCode::NumericalOverflow)?;
+
         // Populate bet account
         bet_account.better = ctx.accounts.better.key();
         bet_account.match_id = match_id;
-        bet_account.amount = amount;
+        bet_account.amount = principal;
         bet_account.team = team;
         bet_account.bet_time = Clock::get()?.unix_timestamp;
         bet_account.claimed = false;
-        bet_account.odds_at_bet = match_account.odds_team1;
-        
+        // Store odds at bet placement (frozen) - odds in basis points (e.g., 150 = 1.5x payout)
+        bet_account.odds_at_bet = if team == 0 { 
+            match_account.odds_team1 
+        } else { 
+            match_account.odds_team2 
+        };
         // Updating match pool
         if team == 0 {
-            match_account.team1_pool_amount += amount;
+            match_account.team1_pool_amount = match_account
+                .team1_pool_amount
+                .checked_add(principal)
+                .ok_or(ErrorCode::NumericalOverflow)?;
         } else {
-            match_account.team2_pool_amount += amount;
+            match_account.team2_pool_amount = match_account
+                .team2_pool_amount
+                .checked_add(principal)
+                .ok_or(ErrorCode::NumericalOverflow)?;
         }
-        match_account.total_pool_amount += amount;
-        platform.total_bets += 1;
-        platform.treasury_balance += amount * platform.fee_percentage / 100;
+        match_account.total_pool_amount = match_account
+            .total_pool_amount
+            .checked_add(principal)
+            .ok_or(ErrorCode::NumericalOverflow)?;
 
+        platform.total_bets = platform
+            .total_bets
+            .checked_add(1)
+            .ok_or(ErrorCode::NumericalOverflow)?;
+        platform.treasury_balance = platform
+            .treasury_balance
+            .checked_add(fee)
+            .ok_or(ErrorCode::NumericalOverflow)?;
+
+        // Transfer principal to match-specific vault
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.better.key(),
+                &match_vault.key(),
+                principal,
+            ),
+            &[
+                ctx.accounts.better.to_account_info(),
+                match_vault.to_account_info(),
+            ],
+        )?;
+
+        // Transfer fee to platform treasury
+        invoke(
+            &system_instruction::transfer(
+                &ctx.accounts.better.key(),
+                &ctx.accounts.platform.key(),
+                fee,
+            ),
+            &[
+                ctx.accounts.better.to_account_info(),
+                ctx.accounts.platform.to_account_info(),
+            ],
+        )?;
         Ok(())
     }
 
@@ -81,68 +171,100 @@ pub mod cricketfi_contracts {
     pub fn claim_winnings(ctx: Context<ClaimWinnings>, team: u8) -> Result<()> {
         let bet = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
-        let platform = &mut ctx.accounts.platform;
+        let match_vault = &ctx.accounts.match_vault;
 
         require!(bet.claimed == false, CricketFiError::WinningsAlreadyClaimed);
         require!(match_account.status == MatchStatus::Completed, CricketFiError::InvalidMatchStatus);
 
+        // Validate that the team parameter matches the bet team
+        require!(team == bet.team, CricketFiError::InvalidTeam);
+
         // Verify the claimed team is the winner
         require!(
+            
             match_account.winner.as_ref().unwrap() == 
             if team == 0 { &match_account.team1 } else { &match_account.team2 },
             CricketFiError::InvalidTeam
         );
 
-        let winning_team = if team==0{
-            match_account.team1_pool_amount
-        } else{
-            match_account.team2_pool_amount
-        };
+        // Calculate winnings using decimal odds (stored as basis points, e.g., 150 = 1.5x)
+        // Formula: winnings = (bet_amount * odds_at_bet) / 100
+        let winnings = bet
+            .amount
+            .checked_mul(bet.odds_at_bet)
+            .ok_or(ErrorCode::NumericalOverflow)?
+            .checked_div(100)
+            .ok_or(ErrorCode::NumericalOverflow)?;
 
-        let winnings = match_account.total_pool_amount * match_account.odds_team1 / winning_team;
-        let platform_fee = winnings * platform.fee_percentage / 100;
-        let winnings_to_claim = winnings - platform_fee;
-        //update bet account
-        bet.claimed= true;
-        //updating match account
-        match_account.total_pool_amount -= winnings;
-        //updating platform accounts
-        platform.treasury_balance+= platform_fee;
-        //transfering claimed winnings to the better
-        invoke(
+        // Ensure vault has sufficient funds
+        require!(
+            match_vault.lamports() >= winnings,
+            CricketFiError::InsufficientVaultFunds
+        );
+
+        // Mark bet as claimed before transfer to prevent reentrancy
+        bet.claimed = true;
+
+        // Update pool amount - subtract only the excess payout (winnings - principal)
+        let excess_payout = winnings.checked_sub(bet.amount).ok_or(ErrorCode::NumericalOverflow)?;
+        match_account.total_pool_amount = match_account
+            .total_pool_amount
+            .checked_sub(excess_payout)
+            .ok_or(ErrorCode::NumericalOverflow)?;
+
+        let match_account_key = match_account.key();
+        let vault_seeds = &[
+            b"match_vault",
+            match_account_key.as_ref(),
+            &[ctx.bumps.match_vault],
+        ];
+
+        // Transfer winnings from vault to the bettor
+        invoke_signed(
             &system_instruction::transfer(
-                &ctx.accounts.platform.key(),
+                &match_vault.key(),
                 &ctx.accounts.better.key(),
-                winnings_to_claim,
+                winnings,
             ),
             &[
-                ctx.accounts.platform.to_account_info(),
+                match_vault.to_account_info(),
                 ctx.accounts.better.to_account_info(),
             ],
-        )?;        Ok(())
+            &[vault_seeds],
+        )?;
+
+        Ok(())
     }
 
-    pub fn refund_bet(ctx: Context<RefundBet>, match_id: String) -> Result<()> {
+    pub fn refund_bet(ctx: Context<RefundBet>) -> Result<()> {
         let bet = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
-        let platform = &mut ctx.accounts.platform;
+        let match_vault = &ctx.accounts.match_vault;
 
         require!(match_account.status == MatchStatus::Cancelled, CricketFiError::MatchNotCancelled);
         require!(!bet.claimed, CricketFiError::WinningsAlreadyClaimed);
-        
+        require!(bet.match_id == match_account.match_id, CricketFiError::InvalidMatch);
+
         bet.claimed = true; //refund claimed
-        
-        //refund
-        Ok(invoke(
+
+        let match_account_key = match_account.key();
+        let vault_seeds = &[
+            b"match_vault",
+            match_account_key.as_ref(),
+            &[ctx.bumps.match_vault],
+        ];
+
+        Ok(invoke_signed(
             &system_instruction::transfer(
-                &ctx.accounts.platform.key(),
+                &match_vault.key(),
                 &ctx.accounts.better.key(),
                 bet.amount,
             ),
             &[
-                ctx.accounts.platform.to_account_info(),
+                match_vault.to_account_info(),
                 ctx.accounts.better.to_account_info(),
-            ]
+            ],
+            &[vault_seeds],
         )?)
     }
 }
@@ -185,6 +307,22 @@ pub struct PlaceBet<'info>{
     pub platform: Account<'info,CricketFiContract>,
     #[account(mut)]
     pub match_account: Account<'info,Match>,
+    /// PDA that stores principal for this match
+    #[account(
+        mut,
+        seeds = [b"match_vault", match_account.key().as_ref()],
+        bump
+    )]
+    pub match_vault: SystemAccount<'info>,
+    /// PDA to track if user has already bet on this match
+    #[account(
+        init,
+        payer = better,
+        space = 8 + 32 + 32 + 1,
+        seeds = [b"user_bet", better.key().as_ref(), match_account.key().as_ref()],
+        bump
+    )]
+    pub user_bet_tracker: Account<'info, UserBetTracker>,
     #[account(
         init,
         payer= better,
@@ -215,6 +353,12 @@ pub struct ClaimWinnings<'info>{
     pub match_account: Account<'info, Match>,
     #[account(
         mut,
+        seeds = [b"match_vault", match_account.key().as_ref()],
+        bump
+    )]
+    pub match_vault: SystemAccount<'info>,
+    #[account(
+        mut,
         has_one = better,
         constraint = bet_account.match_id == match_account.match_id @CricketFiError::InvalidMatch
     )]
@@ -228,6 +372,12 @@ pub struct RefundBet<'info> {
     pub better: Signer<'info>,
     #[account(mut)]
     pub platform: Account<'info, CricketFiContract>,
+    #[account(
+        mut,
+        seeds = [b"match_vault", match_account.key().as_ref()],
+        bump
+    )]
+    pub match_vault: SystemAccount<'info>,
     #[account(
         mut,
         has_one = better,
@@ -262,8 +412,8 @@ pub struct Match{
     pub team2_pool_amount: u64,
     pub status: MatchStatus,    //Match status (Created/Active/Completed/Cancelled)
     pub winner: Option<String>,
-    pub odds_team1: u64,
-    pub odds_team2: u64,
+    pub odds_team1: u64,        // Odds in basis points (e.g., 150 = 1.5x payout)
+    pub odds_team2: u64,        // Odds in basis points (e.g., 200 = 2.0x payout)
     pub min_bet_amount: u64,
     pub max_bet_amount: u64,
 }
@@ -276,7 +426,7 @@ pub struct Bet{
     pub team: u8, //team either 0 or 1
     pub bet_time: i64, //when bet was placed
     pub claimed: bool, //if bet has been claimed or not
-    pub odds_at_bet: u64, //odds at the time of placing the bet
+    pub odds_at_bet: u64, //odds at the time of placing the bet (basis points, e.g., 150 = 1.5x)
 }
 
 #[account]
@@ -285,6 +435,13 @@ pub struct UserStats{
     pub total_winnings: u64,
     pub wins: u64,
     pub losses: u64,
+}
+
+#[account]
+pub struct UserBetTracker {
+    pub user: Pubkey,
+    pub match_id: String,
+    pub has_bet: bool,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq)]
@@ -317,4 +474,26 @@ pub enum CricketFiError{
 
     #[msg("Invalid Match")]
     InvalidMatch,
+
+    #[msg("Invalid Start Time")]
+    InvalidStartTime,
+
+    #[msg("Betting Closed")]
+    BettingClosed,
+
+    #[msg("User Already Bet")]
+    UserAlreadyBet,
+
+    #[msg("Insufficient Vault Funds")]
+    InsufficientVaultFunds,
+
+    #[msg("Invalid Odds")]
+    InvalidOdds,
+}
+
+/// Additional numerical error for checked math
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Numerical overflow during calculation")]
+    NumericalOverflow,
 }
