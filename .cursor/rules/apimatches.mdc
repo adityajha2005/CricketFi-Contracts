@@ -1,0 +1,704 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+ Cricket DataVersion 1.0
+Home
+Subscribe
+Payments
+Test API
+Profile
+Logout
+Generic Information
+Countries with Flags
+ 
+List APIs
+Cricket Series List
+Cricket Series Search
+All Matches List
+Current Matches List
+Series Squad List
+All Players List
+Search All Players
+ 
+Cricket Info APIs
+Series Info
+Match Info
+Player Info
+ 
+Fantasy API
+This section explains the basic working of Cricket Data API - it is not language specific. This can guide you in implementing the API for your favourite programming language. We also have quite a few Code Samples in different languages, - furthermore if you'd like to contribute please do reach out to us on contact@cricketdata.org! The Fantasy APIs may be found here.
+
+Index
+Countries with Flags
+List APIs
+Cricket Series List
+Cricket Series Search
+All Matches List
+Current Matches List
+Series Squad List
+All Players List
+Search All Players
+Cricket Info APIs
+Series Info
+Match Info
+Player Info
+Fantasy API
+Generic Information
+Generic API provide you supportive information.
+A number of generic API are made available for your use - country, flags, banners and more. Any images / rich content provided is supported by our Global CDN so you can be assured of great performance no matter where you are based.
+
+Important information to remember at all times: Every API response contains a generic 'info' object that tells you the result of your interaction with our systems. JSON keys tagged 'optional' may not exist in some scenarios, so please check for the presence of the key before reading it's value.
+
+
+apikey	Guid Your subscription's API key. You may use different API keys based on your choice of subscription.
+This is in a Guid format like 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'.
+status	String success / failure based on the API result
+data	Important An array / object containing the main data of the API. Sometimes the response data may have a large number of rows, and it's not possible to send all of them in a single query. One query is limited to 25 rows.
+info	An object explaining the result of the API
+hitsToday	Number Hits made today for the current API Key
+hitsLimit	Number Limit on the hits for the current API Key
+credits	Number optional Credits in your account
+server	Number The ID of the server that served the current response
+offsetRows	Number Row offset, based on what you have requested
+totalRows	Number Total rows
+queryTime	Number Time (ms) taken to execute the current query
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "status": "success",
+  "info": {
+    "hitsToday": 10,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 249,
+    "queryTime": 10
+  }
+}
+Countries with Flags
+List of countries and flags
+A comprehensive list of all countries with their corresponding flags (served from a CDN in Vector SVG format). Now you can always show flags of the countries that compete in the matches you choose to cover!
+
+
+https://api.cricapi.com/v1/countries?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	String Unique 2 letter Country ID
+name	String Name of the Country
+genericFlag	URL URL of the Country's flag (generic)
+fanartFlag	URL optional Fan Art version of the Country's flag
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "zw",
+      "name": "Zimbabwe",
+      "genericFlag": "https://cdorg.b-cdn.net/flags/generic/ZW.svg"
+    },
+    {
+      "id": "zm",
+      "name": "Zambia",
+      "genericFlag": "https://cdorg.b-cdn.net/flags/generic/ZM.svg"
+    },
+    {
+      "id": "za",
+      "name": "South Africa",
+      "genericFlag": "https://cdorg.b-cdn.net/flags/generic/ZA.svg"
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 10,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 249,
+    "queryTime": 10
+  }
+}
+Try out the API in real time
+List APIs
+These APIs give you a List of items
+The common thing to keep in mind is that the 'data' field of the JSON response holds the array of data, and the method for parsing for all List type API is quite similar.
+
+
+Cricket Series List
+List of Series covered in Cricket Data
+A Descending-Order (latest first) list of all series that we cover. Keep in mind that in some cases series or some matches in the series may only get partial coverage.
+
+
+https://api.cricapi.com/v1/series?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Series
+name	String Name & Year of the Series
+startDate	Date Start Date & Month of the Series
+endDate	Date End Date & Month of the Series
+odi	Number Number of ODIs in this Series
+t20	Number Number of T20s in this Series
+test	Number Number of Tests in this Series
+squads	Number Number of Squads for which data is loaded (series may have more squads for which data is pending / undeclared)
+matches	Number Number of Matches for which data is loaded (series may have more matches that are pending / undeclared)
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "47b54677-34de-4378-9019-154e82b9cc1a",
+      "name": "Indian Premier League 2022",
+      "startDate": "Mar 26",
+      "endDate": "May 29",
+      "odi": 0,
+      "t20": 70,
+      "test": 0,
+      "squads": 10,
+      "matches": 70
+    },
+    {
+      "id": "ff5aa3f3-7164-4766-be90-3b64783257a0",
+      "name": "Australia Domestic One-Day Cup 2021-22",
+      "startDate": "Sep 22",
+      "endDate": "Mar 11",
+      "odi": 19,
+      "t20": 0,
+      "test": 0,
+      "squads": 0
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 1,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 42,
+    "queryTime": 10
+  }
+}
+Try out the API in real time
+Cricket Series Search
+Series Search function for Cricket API
+List of all series that match the name specified. This is matches on Name and ShortName. Keep in mind that in some cases series or some matches in the series may only get partial coverage.
+
+
+https://api.cricapi.com/v1/series?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0&search=IPL
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Series
+name	String Name & Year of the Series
+startDate	Date Start Date & Month of the Series
+endDate	Date End Date & Month of the Series
+odi	Number Number of ODIs in this Series
+t20	Number Number of T20s in this Series
+test	Number Number of Tests in this Series
+squads	Number Number of Squads for which data is loaded (series may have more squads for which data is pending / undeclared)
+matches	Number Number of Matches for which data is loaded (series may have more matches that are pending / undeclared)
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0,
+  "search": "IPL"
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "47b54677-34de-4378-9019-154e82b9cc1a",
+      "name": "Indian Premier League 2022",
+      "startDate": "Mar 26",
+      "endDate": "May 29",
+      "odi": 0,
+      "t20": 70,
+      "test": 0,
+      "squads": 10,
+      "matches": 70
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 1,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 42,
+    "queryTime": 10
+  }
+}
+Try out the API in real time
+All Matches List
+A large list of all matches covered
+This API does give you a full list of matches; but keep in mind that using the Series Info API may be easier if you wish to cover just a few series.
+
+
+https://api.cricapi.com/v1/matches?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Match
+name	String Name of the Match
+matchType	String Type of the match odi,t20,test
+score	Object optional Score of the match, in inning sequence
+Contains Team, Inning, Runs, Wickets, Overs
+status	String Latest Match status
+venue	String Venue of the Match
+date	Date Date of the Match
+dateTimeGMT	Date Date and Time of the Match in GMT
+(UTC+00) ISO Format YYYY-MM-DDTHH:mm:ss
+teams	Array Names of the teams in JSON array
+series_id	Guid Unique identifier for the Series this Match is under
+fantasyEnabled	Boolean True only if Fantasy Scorecard / Squad / Ball-by-Ball are available for this match
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "2d448290-d882-4e67-9a4a-f62dfea9a51a",
+      "name": "Western Australia vs New South Wales, Final",
+      "status": "Western Australia won by 18 runs",
+      "matchType": "odi",
+      "venue": "Junction Oval, Melbourne",
+      "date": "2022-03-10",
+      "dateTimeGMT": "2022-03-10T23:30:00",
+      "teams": [
+        "Western Australia",
+        "New South Wales"
+      ],
+      "score": [
+        {
+          "r": 207,
+          "w": 10,
+          "o": 46.3,
+          "inning": "Western Australia Inning 1"
+        },
+        {
+          "r": 225,
+          "w": 9,
+          "o": 50,
+          "inning": "New South Wales Inning 1"
+        }
+      ],
+      "series_id": "ff5aa3f3-7164-4766-be90-3b64783257a0",
+      "fantasyEnabled": false
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 3,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 913,
+    "queryTime": 14.5072
+  }
+}
+Try out the API in real time
+Current Matches List
+Current matches with a TossWinner but no MatchWinner
+This API does give you a full list of CURRENT matches; but keep in mind that using the Series Info API may be easier if you wish to cover just a few series.
+
+
+https://api.cricapi.com/v1/currentMatches?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Match
+name	String Name of the Match
+matchType	String Type of the match odi,t20,test
+score	Object optional Score of the match, in inning sequence
+Contains Team, Inning, Runs, Wickets, Overs
+status	String Latest Match status
+venue	String Venue of the Match
+date	Date Date of the Match
+dateTimeGMT	Date Date and Time of the Match in GMT
+(UTC+00) ISO Format YYYY-MM-DDTHH:mm:ss
+teams	Array Names of the teams in JSON array
+series_id	Guid Unique identifier for the Series this Match is under
+fantasyEnabled	Boolean True only if Fantasy Scorecard / Squad / Ball-by-Ball are available for this match
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "2d448290-d882-4e67-9a4a-f62dfea9a51a",
+      "name": "Western Australia vs New South Wales, Final",
+      "status": "Western Australia won by 18 runs",
+      "matchType": "odi",
+      "venue": "Junction Oval, Melbourne",
+      "date": "2022-03-10",
+      "dateTimeGMT": "2022-03-10T23:30:00",
+      "teams": [
+        "Western Australia",
+        "New South Wales"
+      ],
+      "score": [
+        {
+          "r": 207,
+          "w": 10,
+          "o": 46.3,
+          "inning": "Western Australia Inning 1"
+        },
+        {
+          "r": 225,
+          "w": 9,
+          "o": 50,
+          "inning": "New South Wales Inning 1"
+        }
+      ],
+      "series_id": "ff5aa3f3-7164-4766-be90-3b64783257a0",
+      "fantasyEnabled": false
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 3,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 913,
+    "queryTime": 14.5072
+  }
+}
+Try out the API in real time
+Series Squad List
+Coming soon
+The Series squad list API gives you a list of Squads in the given Series. This is yet under development, so please bear with us. Coming soon!
+
+
+All Players List
+A large list of all players in the system
+This API gives you a full list of players with their Country of origin. Based on this you can then query the Player Info API and get more details for each player.
+
+
+https://api.cricapi.com/v1/players?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Player
+name	String Full Name of the player
+country	String Country the player belongs to
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "16592242-ef26-45d9-bf23-fc090e90fbbe",
+      "name": "Anderson Phillip",
+      "country": "West Indies"
+    },
+    {
+      "id": "9f2abfee-a09f-47c8-a1e5-8eb03fa7b85a",
+      "name": "Veerasammy Permaul",
+      "country": "West Indies"
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 7,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 1992,
+    "queryTime": 10.099
+  }
+}
+Try out the API in real time
+Search All Players
+Searches through our entire players database in the system
+This API gives you a full list of players with their Country of origin. Based on this you can then query the Player Info API and get more details for each player.
+
+
+https://api.cricapi.com/v1/players?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+id	Guid Unique identifier for this Player
+name	String Full Name of the player
+country	String Country the player belongs to
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": [
+    {
+      "id": "16592242-ef26-45d9-bf23-fc090e90fbbe",
+      "name": "Anderson Phillip",
+      "country": "West Indies"
+    },
+    {
+      "id": "9f2abfee-a09f-47c8-a1e5-8eb03fa7b85a",
+      "name": "Veerasammy Permaul",
+      "country": "West Indies"
+    }
+  ],
+  "status": "success",
+  "info": {
+    "hitsToday": 7,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 18,
+    "offsetRows": 0,
+    "totalRows": 1992,
+    "queryTime": 10.099
+  }
+}
+Try out the API in real time
+Cricket Info APIs
+These APIs give you Details of each item shown in the List API
+Details about series, matches, players, etc can be acquired through this API. Keep in mind that this API does NOT have pagination, so if there's a long list or a large API response you will need to handle it accordingly.
+
+
+Series Info
+Detailed info about the Series
+Based on the Series ID provided, this API will give you information about the Series. Beware that the Match List given here is the COMPLETE list, so it will be very HEAVY when the Series has a large number of matches! You should ideally pull this API max 2-3 times a Day or on Manual intervention from your end if required.
+
+
+https://api.cricapi.com/v1/series_info?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0&id=47b54677-34de-4378-9019-154e82b9cc1a
+
+status	String success / failure based on the API result
+data	An array / object containing the main data of the API
+info	The basic details about the Series
+id	Guid Unique identifier for this Series
+name	String Name & Year of the Series
+startDate	Date Start Date & Month of the Series
+endDate	Date End Date & Month of the Series
+odi	Number Number of ODIs in this Series
+t20	Number Number of T20s in this Series
+test	Number Number of Tests in this Series
+squads	Number Number of Squads for which data is loaded (series may have more squads for which data is pending / undeclared)
+matches	Number Number of Matches for which data is loaded (series may have more matches that are pending / undeclared)
+matchList	An array / object containing the Matches in this Series
+id	Guid Unique identifier for this Match
+name	String Name of the MAtch
+matchType	String Type of the match odi,t20,test
+status	String Latest Match status
+venue	String Venue of the Match
+date	Date Date of the Match
+dateTimeGMT	Date Date and Time of the Match in GMT
+(UTC+00) ISO Format YYYY-MM-DDTHH:mm:ss
+teams	Array Names of the teams in JSON array
+fantasyEnabled	Boolean True only if Fantasy Scorecard / Squad / Ball-by-Ball are available for this match
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0,
+  "id": "47b54677-34de-4378-9019-154e82b9cc1a"
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": {
+    "info": {
+      "id": "47b54677-34de-4378-9019-154e82b9cc1a",
+      "name": "Indian Premier League 2022",
+      "startdate": "Mar 26",
+      "enddate": "May 29",
+      "odi": 0,
+      "t20": 70,
+      "test": 0,
+      "squads": 10,
+      "matches": 70
+    },
+    "matchList": [
+      {
+        "id": "341e6690-ece0-4dce-83fc-91effbb28eb3",
+        "name": "Chennai Super Kings vs Kolkata Knight Riders, 1st Match",
+        "matchType": "t20",
+        "status": "Match not started",
+        "venue": "Wankhede Stadium, Mumbai",
+        "date": "2022-03-26",
+        "dateTimeGMT": "2022-03-26T14:00:00",
+        "teams": [
+          "Chennai Super Kings",
+          "Kolkata Knight Riders"
+        ],
+        "fantasyEnabled": false
+      }
+    ]
+  },
+  "status": "success",
+  "info": {
+    "hitsToday": 12,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 11,
+    "queryTime": 10
+  }
+}
+Try out the API in real time
+Match Info
+Detailed info about the Match
+Provides the details of this cricket match. If you require scorecard / ball by ball or other more detailed information, please use the corresponding Fantasy Squad / Fantasy Scorecard / Fantasy Ball-by-Ball API.
+
+
+https://api.cricapi.com/v1/match_info?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0&id=820cfd88-3b56-4a6e-9dd8-1203051140da
+
+status	String success / failure based on the API result
+data	An array / object containing this Matches detail
+id	Guid Unique identifier for this Match
+name	String Name of the Match
+matchType	String Type of the match odi,t20,test
+score	Object optional Score of the match, in inning sequence
+Contains Team, Inning, Runs, Wickets, Overs
+status	String Latest Match status
+venue	String Venue of the Match
+date	Date Date of the Match
+dateTimeGMT	Date Date and Time of the Match in GMT
+(UTC+00) ISO Format YYYY-MM-DDTHH:mm:ss
+teams	Array Names of the teams in JSON array
+fantasyEnabled	Boolean True only if Fantasy Scorecard / Squad / Ball-by-Ball are available for this match
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0,
+  "id": "820cfd88-3b56-4a6e-9dd8-1203051140da"
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": {
+    "id": "2d448290-d882-4e67-9a4a-f62dfea9a51a",
+    "name": "Western Australia vs New South Wales, Final",
+    "matchType": "odi",
+    "status": "Western Australia won by 18 runs",
+    "venue": "Junction Oval, Melbourne",
+    "date": "2022-03-10",
+    "dateTimeGMT": "2022-03-10T23:30:00",
+    "teams": [
+      "Western Australia",
+      "New South Wales"
+    ],
+    "score": [
+      {
+        "r": 207,
+        "w": 10,
+        "o": 46.3,
+        "inning": "Western Australia Inning 1"
+      },
+      {
+        "r": 225,
+        "w": 9,
+        "o": 50,
+        "inning": "New South Wales Inning 1"
+      }
+    ],
+    "tossWinner": "Western Australia",
+    "tossChoice": "bat",
+    "matchWinner": "Western Australia",
+    "series_id": "ff5aa3f3-7164-4766-be90-3b64783257a0",
+    "fantasyEnabled": false
+  },
+  "status": "success",
+  "info": {
+    "hitsToday": 21,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 11,
+    "queryTime": 15.7629
+  }
+}
+Try out the API in real time
+Player Info
+Detailed info about the Player
+Basic details about the player are provided in this API. In future we will include a player photograph (coming soon).
+
+
+https://api.cricapi.com/v1/players_info?apikey=14e13ea1-6266-4180-9059-8b6545324ea8&offset=0&id=16592242-ef26-45d9-bf23-fc090e90fbbe
+
+status	String success / failure based on the API result
+data	An array / object containing this Player detail
+id	Guid Unique identifier for this Player
+name	String Name of the Player
+dateOfBirth	Date Date of Birth
+role	String Player's Role
+battingStyle	String Batting Style
+bowlingStyle	String Bowling Style
+placeOfBirth	String Place of Birth
+country	String Player's Country
+Input
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "offset": 0,
+  "id": "16592242-ef26-45d9-bf23-fc090e90fbbe"
+}
+Output
+(data may be truncated for ease of reading)
+{
+  "apikey": "14e13ea1-6266-4180-9059-8b6545324ea8",
+  "data": {
+    "id": "16592242-ef26-45d9-bf23-fc090e90fbbe",
+    "name": "Anderson Phillip",
+    "dateOfBirth": "1996-08-22T00:00:00",
+    "role": "Bowler",
+    "battingStyle": "Right Handed Bat",
+    "bowlingStyle": "Right-arm fast-medium",
+    "placeOfBirth": "--",
+    "country": "West Indies"
+  },
+  "status": "success",
+  "info": {
+    "hitsToday": 41,
+    "hitsLimit": 500,
+    "credits": 0,
+    "server": 11,
+    "queryTime": 10
+  }
+}
+Try out the API in real time
+Fantasy API
+Work in Progress Detailed Scorecard, Squad and Ball-By-Ball APIs
+Fantasy API includes Scorecard, Ball-by-Ball and Squad API for each match. This is still a work in progress, so expect more changes to come in the future!
+
+

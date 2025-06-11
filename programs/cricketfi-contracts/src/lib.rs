@@ -267,6 +267,101 @@ pub mod cricketfi_contracts {
             &[vault_seeds],
         )?)
     }
+
+    // ----------------- ADMIN -----------------
+
+    /// Creates a new match on-chain before betting opens.
+    pub fn create_match(
+        ctx: Context<CreateMatch>,
+        api_match_id: String,
+        team1: String,
+        team2: String,
+        start_ts: i64,
+        min_bet: u64,
+        max_bet: u64,
+        odds_team1: u64,
+        odds_team2: u64,
+    ) -> Result<()> {
+        require!(odds_team1 >= 101 && odds_team1 <= 1000, CricketFiError::InvalidOdds);
+        require!(odds_team2 >= 101 && odds_team2 <= 1000, CricketFiError::InvalidOdds);
+        let m = &mut ctx.accounts.match_account;
+        let p = &mut ctx.accounts.platform;
+
+        m.match_id = api_match_id;
+        m.team1 = team1;
+        m.team2 = team2;
+        m.match_date = "".to_string();
+        m.start_time = start_ts.to_string();
+        m.end_time = "0".to_string();
+        m.total_pool_amount = 0;
+        m.team1_pool_amount = 0;
+        m.team2_pool_amount = 0;
+        m.status = MatchStatus::Created;
+        m.winner = None;
+        m.odds_team1 = odds_team1;
+        m.odds_team2 = odds_team2;
+        m.min_bet_amount = min_bet;
+        m.max_bet_amount = max_bet;
+
+        p.total_matches = p.total_matches.checked_add(1).ok_or(ErrorCode::NumericalOverflow)?;
+        Ok(())
+    }
+
+    /// Admin can update odds until the match becomes Active.
+    pub fn set_odds(ctx: Context<SetOdds>, odds_team1: u64, odds_team2: u64) -> Result<()> {
+        require!(odds_team1 >= 101 && odds_team1 <= 1000, CricketFiError::InvalidOdds);
+        require!(odds_team2 >= 101 && odds_team2 <= 1000, CricketFiError::InvalidOdds);
+        let m = &mut ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Created || m.status == MatchStatus::Active, CricketFiError::InvalidMatchStatus);
+        m.odds_team1 = odds_team1;
+        m.odds_team2 = odds_team2;
+        Ok(())
+    }
+
+    /// Admin can cancel a match before it is resolved.
+    pub fn cancel_match(ctx: Context<CancelMatch>) -> Result<()> {
+        let m = &mut ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Created || m.status == MatchStatus::Active, CricketFiError::InvalidMatchStatus);
+        m.status = MatchStatus::Cancelled;
+        Ok(())
+    }
+
+    /// Withdraw accumulated platform fees to the authority wallet.
+    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
+        {
+            // limit lifetime of mutable borrow
+            let platform = &mut ctx.accounts.platform;
+            require_keys_eq!(platform.authority, ctx.accounts.authority.key(), CricketFiError::UnauthorizedAccess);
+            require!(platform.treasury_balance >= amount, CricketFiError::InsufficientVaultFunds);
+
+            platform.treasury_balance = platform
+                .treasury_balance
+                .checked_sub(amount)
+                .ok_or(ErrorCode::NumericalOverflow)?;
+        }
+
+        // Prepare seeds after mutable borrow has ended
+        let auth_key = ctx.accounts.authority.key();
+        let seeds: &[&[u8]] = &[
+            b"platform",
+            auth_key.as_ref(),   // same seeds as PDA init
+            &[ctx.bumps.platform],
+        ];
+
+        invoke_signed(
+            &system_instruction::transfer(
+                &ctx.accounts.platform.key(),
+                &ctx.accounts.authority.key(),
+                amount,
+            ),
+            &[
+                ctx.accounts.platform.to_account_info(),
+                ctx.accounts.authority.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -276,7 +371,9 @@ pub struct InitializePlatform<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 8 + 8 + 8 + 8
+        space = 8 + 32 + 8 + 8 + 8 + 8,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump
     )]
     pub platform: Account<'info, CricketFiContract>,
     pub system_program: Program<'info, System>,
@@ -303,7 +400,11 @@ pub struct CreateMatch<'info>{
 pub struct PlaceBet<'info>{
     #[account(mut)]
     pub better: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"platform", platform.authority.as_ref()],
+        bump
+    )]
     pub platform: Account<'info,CricketFiContract>,
     #[account(mut)]
     pub match_account: Account<'info,Match>,
@@ -336,7 +437,11 @@ pub struct PlaceBet<'info>{
 pub struct ResolveMatch<'info>{
     #[account(mut)]
     pub authority: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump
+    )]
     pub platform: Account<'info,CricketFiContract>,
     #[account(mut)]
     pub match_account: Account<'info,Match>,
@@ -347,7 +452,11 @@ pub struct ResolveMatch<'info>{
 pub struct ClaimWinnings<'info>{
     #[account(mut)]
     pub better: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"platform", platform.authority.as_ref()],
+        bump
+    )]
     pub platform: Account<'info,CricketFiContract>,
     #[account(mut)]
     pub match_account: Account<'info, Match>,
@@ -370,7 +479,11 @@ pub struct ClaimWinnings<'info>{
 pub struct RefundBet<'info> {
     #[account(mut)]
     pub better: Signer<'info>,
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [b"platform", platform.authority.as_ref()],
+        bump
+    )]
     pub platform: Account<'info, CricketFiContract>,
     #[account(
         mut,
@@ -389,6 +502,49 @@ pub struct RefundBet<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+pub struct SetOdds<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump,
+        constraint = platform.authority == authority.key() @CricketFiError::UnauthorizedAccess
+    )]
+    pub platform: Account<'info, CricketFiContract>,
+    #[account(mut)]
+    pub match_account: Account<'info, Match>,
+}
+
+#[derive(Accounts)]
+pub struct CancelMatch<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump,
+        constraint = platform.authority == authority.key() @CricketFiError::UnauthorizedAccess
+    )]
+    pub platform: Account<'info, CricketFiContract>,
+    #[account(mut)]
+    pub match_account: Account<'info, Match>,
+}
+
+#[derive(Accounts)]
+pub struct WithdrawTreasury<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump,
+        constraint = platform.authority == authority.key() @CricketFiError::UnauthorizedAccess
+    )]
+    pub platform: Account<'info, CricketFiContract>,
+    pub system_program: Program<'info, System>,
+}
 
 #[account]
 pub struct CricketFiContract {
