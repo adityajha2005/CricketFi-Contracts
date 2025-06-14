@@ -81,6 +81,8 @@ pub mod cricketfi_contracts {
             .ok_or(ErrorCode::NumericalOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::NumericalOverflow)?;
+        
+        require!(fee <= u32::MAX as u64, ErrorCode::NumericalOverflow);
         let principal = amount.checked_sub(fee).ok_or(ErrorCode::NumericalOverflow)?;
 
         // Populate bet account
@@ -303,6 +305,14 @@ pub mod cricketfi_contracts {
         m.max_bet_amount = max_bet;
 
         p.total_matches = p.total_matches.checked_add(1).ok_or(ErrorCode::NumericalOverflow)?;
+        Ok(())
+    }
+
+    /// Admin can activate a match to allow betting.
+    pub fn activate_match(ctx: Context<ActivateMatch>) -> Result<()> {
+        let m = &mut ctx.accounts.match_account;
+        require!(m.status == MatchStatus::Created, CricketFiError::InvalidMatchStatus);
+        m.status = MatchStatus::Active;
         Ok(())
     }
 
@@ -543,6 +553,21 @@ pub struct WithdrawTreasury<'info>{
     )]
     pub platform: Account<'info, CricketFiContract>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ActivateMatch<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"platform", authority.key().as_ref()],
+        bump,
+        constraint = platform.authority == authority.key() @CricketFiError::UnauthorizedAccess
+    )]
+    pub platform: Account<'info, CricketFiContract>,
+    #[account(mut)]
+    pub match_account: Account<'info, Match>,
 }
 
 #[account]
