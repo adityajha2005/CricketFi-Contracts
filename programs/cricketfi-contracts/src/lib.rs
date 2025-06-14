@@ -21,7 +21,7 @@ pub mod cricketfi_contracts {
         Ok(())
     }
 
-    pub fn placebet(ctx: Context<PlaceBet>, match_id: String, amount: u64, team: u8) -> Result<()> {
+    pub fn placebet(ctx: Context<PlaceBet>, match_id: [u8; 32], amount: u64, team: u8) -> Result<()> {
         let bet_account = &mut ctx.accounts.bet_account;
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
@@ -42,10 +42,8 @@ pub mod cricketfi_contracts {
 
         // Check if match has already started
         let current_time = Clock::get()?.unix_timestamp;
-        let start_time = match_account.start_time.parse::<i64>()
-            .map_err(|_| CricketFiError::InvalidStartTime)?;
         require!(
-            current_time < start_time,
+            current_time < match_account.start_time,
             CricketFiError::BettingClosed
         );
 
@@ -74,12 +72,12 @@ pub mod cricketfi_contracts {
 
         // Mark that this user has bet on this match
         user_bet_tracker.user = ctx.accounts.better.key();
-        user_bet_tracker.match_id = match_id.clone();
+        user_bet_tracker.match_id = match_id;
         user_bet_tracker.has_bet = true;
 
         //Calculate fee & principal
         let fee = amount
-            .checked_mul(platform.fee_percentage)
+            .checked_mul(platform.fee_percentage as u64)
             .ok_or(ErrorCode::NumericalOverflow)?
             .checked_div(100)
             .ok_or(ErrorCode::NumericalOverflow)?;
@@ -121,7 +119,7 @@ pub mod cricketfi_contracts {
             .ok_or(ErrorCode::NumericalOverflow)?;
         platform.treasury_balance = platform
             .treasury_balance
-            .checked_add(fee)
+            .checked_add(fee as u32)
             .ok_or(ErrorCode::NumericalOverflow)?;
 
         // Transfer principal to match-specific vault
@@ -154,8 +152,7 @@ pub mod cricketfi_contracts {
 
     pub fn resolve_match(
         ctx: Context<ResolveMatch>, 
-        // match_id: String, 
-        winner: String
+        winner: [u8; 32]
         )->Result<()>{
         let match_account = &mut ctx.accounts.match_account;
         let platform = &mut ctx.accounts.platform;
@@ -180,10 +177,13 @@ pub mod cricketfi_contracts {
         require!(team == bet.team, CricketFiError::InvalidTeam);
 
         // Verify the claimed team is the winner
+        let winner_team = if team == 0 { 
+            match_account.team1 
+        } else { 
+            match_account.team2 
+        };
         require!(
-            
-            match_account.winner.as_ref().unwrap() == 
-            if team == 0 { &match_account.team1 } else { &match_account.team2 },
+            match_account.winner.as_ref().unwrap() == &winner_team,
             CricketFiError::InvalidTeam
         );
 
@@ -273,9 +273,9 @@ pub mod cricketfi_contracts {
     /// Creates a new match on-chain before betting opens.
     pub fn create_match(
         ctx: Context<CreateMatch>,
-        api_match_id: String,
-        team1: String,
-        team2: String,
+        api_match_id: [u8; 32],
+        team1: [u8; 32],
+        team2: [u8; 32],
         start_ts: i64,
         min_bet: u64,
         max_bet: u64,
@@ -290,9 +290,8 @@ pub mod cricketfi_contracts {
         m.match_id = api_match_id;
         m.team1 = team1;
         m.team2 = team2;
-        m.match_date = "".to_string();
-        m.start_time = start_ts.to_string();
-        m.end_time = "0".to_string();
+        m.start_time = start_ts;
+        m.end_time = 0;
         m.total_pool_amount = 0;
         m.team1_pool_amount = 0;
         m.team2_pool_amount = 0;
@@ -327,7 +326,7 @@ pub mod cricketfi_contracts {
     }
 
     /// Withdraw accumulated platform fees to the authority wallet.
-    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u64) -> Result<()> {
+    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, amount: u32) -> Result<()> {
         {
             // limit lifetime of mutable borrow
             let platform = &mut ctx.accounts.platform;
@@ -352,7 +351,7 @@ pub mod cricketfi_contracts {
             &system_instruction::transfer(
                 &ctx.accounts.platform.key(),
                 &ctx.accounts.authority.key(),
-                amount,
+                amount as u64,
             ),
             &[
                 ctx.accounts.platform.to_account_info(),
@@ -371,7 +370,7 @@ pub struct InitializePlatform<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 8 + 8 + 8 + 8,
+        space = 8 + 32 + 2 + 2 + 4 + 1, // discriminator + authority + total_matches + total_bets + treasury_balance + fee_percentage
         seeds = [b"platform", authority.key().as_ref()],
         bump
     )]
@@ -390,7 +389,7 @@ pub struct CreateMatch<'info>{
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 32 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1 + 32 + 8 + 8 + 8 + 8
+        space = 8 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + 8 + 8 // discriminator + match_id + team1 + team2 + start_time + end_time + 3 pool amounts + status + winner option + 2 odds + min/max bet
     )]
     pub match_account: Account<'info,Match>,
     pub system_program: Program<'info,System>,
@@ -419,7 +418,7 @@ pub struct PlaceBet<'info>{
     #[account(
         init,
         payer = better,
-        space = 8 + 32 + 32 + 1,
+        space = 8 + 32 + 32 + 1, // discriminator + user + match_id + has_bet
         seeds = [b"user_bet", better.key().as_ref(), match_account.key().as_ref()],
         bump
     )]
@@ -427,7 +426,7 @@ pub struct PlaceBet<'info>{
     #[account(
         init,
         payer= better,
-        space = 8 + 32 + 32 + 8 + 1 + 8 + 1 + 8
+        space = 8 + 32 + 32 + 8 + 1 + 8 + 1 + 8 // discriminator + better + match_id + amount + team + bet_time + claimed + odds_at_bet
     )]
     pub bet_account: Account<'info,Bet>,
     pub system_program: Program<'info,System>,
@@ -549,25 +548,27 @@ pub struct WithdrawTreasury<'info>{
 #[account]
 pub struct CricketFiContract {
     pub authority: Pubkey, //Admin of the Project
-    pub total_matches: u64, //total matches played on the platform
-    pub total_bets: u64, //total bets
-    pub treasury_balance: u64, //platform fee accumulated
-    pub fee_percentage: u64 //platform fee percentage
+    pub total_matches: u16, //total matches played on the platform
+    pub total_bets: u16, //total bets
+    pub treasury_balance: u32, //platform fee accumulated
+    pub fee_percentage: u8 //platform fee percentage
 }
 
 #[account]
+
+//most efficient type for match strucst
 pub struct Match{
-    pub match_id: String,
-    pub team1: String,
-    pub team2: String,
-    pub match_date: String,
-    pub start_time: String,
-    pub end_time: String,
+    pub match_id: [u8; 32],
+    pub team1: [u8; 32],
+    pub team2: [u8; 32],
+    // pub match_date: i64,
+    pub start_time: i64,
+    pub end_time: i64,
     pub total_pool_amount: u64,
     pub team1_pool_amount: u64,
     pub team2_pool_amount: u64,
     pub status: MatchStatus,    //Match status (Created/Active/Completed/Cancelled)
-    pub winner: Option<String>,
+    pub winner: Option<[u8;32]>,
     pub odds_team1: u64,        // Odds in basis points (e.g., 150 = 1.5x payout)
     pub odds_team2: u64,        // Odds in basis points (e.g., 200 = 2.0x payout)
     pub min_bet_amount: u64,
@@ -577,7 +578,7 @@ pub struct Match{
 #[account]
 pub struct Bet{
     pub better : Pubkey,
-    pub match_id: String,
+    pub match_id: [u8;32],
     pub amount: u64, //bet amount in lamports
     pub team: u8, //team either 0 or 1
     pub bet_time: i64, //when bet was placed
@@ -596,7 +597,7 @@ pub struct UserStats{
 #[account]
 pub struct UserBetTracker {
     pub user: Pubkey,
-    pub match_id: String,
+    pub match_id: [u8;32],
     pub has_bet: bool,
 }
 
